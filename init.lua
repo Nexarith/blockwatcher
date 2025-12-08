@@ -22,6 +22,12 @@ CREATE TABLE IF NOT EXISTS logs (
 );
 ]])
 
+-- Register BlockWatcher admin privilege
+minetest.register_privilege("blockwatcher_admin", {
+    description = "Allows use of BlockWatcher admin commands",
+    give_to_singleplayer = true
+})
+
 -- Function to log events
 local function log_event(playername, action, pos, node)
     local stmt = db:prepare([[
@@ -57,7 +63,7 @@ end)
 minetest.register_chatcommand("bw_check", {
     params = "<player>",
     description = "Show block edits made by a specific player",
-    privs = {server=true},
+    privs = {blockwatcher_admin=true},
     func = function(name, param)
         if param == "" then
             return false, "Usage: /bw_check <player>"
@@ -104,7 +110,7 @@ end
 -- /bw_area command
 minetest.register_chatcommand("bw_area", {
     description = "Show edits inside a selected region (use //set1 and //set2 from WorldEdit)",
-    privs = {server=true},
+    privs = {blockwatcher_admin=true},
     func = function(name)
         local p1 = get_pos(name, 1)
         local p2 = get_pos(name, 2)
@@ -154,15 +160,12 @@ minetest.register_chatcommand("bw_area", {
         return true, table.concat(result, "\n")
     end,
 })
--- /bw_undo command
--- Usage examples:
--- /bw_undo player <name> [count]  -> undo last X actions of a player
--- /bw_undo area                   -> undo last actions in selected region (WorldEdit //set1 & //set2)
 
+-- /bw_undo command
 minetest.register_chatcommand("bw_undo", {
     params = "[player <name> [count]] | [area]",
     description = "Undo block changes by player or in area",
-    privs = {server=true},
+    privs = {blockwatcher_admin=true},
     func = function(name, param)
         local args = {}
         for word in param:gmatch("%S+") do table.insert(args, word) end
@@ -196,10 +199,8 @@ minetest.register_chatcommand("bw_undo", {
             for _, row in ipairs(changes) do
                 local pos = {x=row.x, y=row.y, z=row.z}
                 if row.action == "placed" then
-                    -- undo placement -> remove node
                     minetest.set_node(pos, {name="air"})
                 elseif row.action == "dug" then
-                    -- undo dig -> restore node
                     minetest.set_node(pos, {name=row.nodename})
                 end
             end
