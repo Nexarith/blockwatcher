@@ -101,11 +101,4 @@ Logs are stored in simple, daily flat files (serialized Lua tables) for easy ext
 
 ---
 
-Enjoy being Sherlock Holmes's Luanti version!- Discord alerts for griefing  
-- Web-based dashboard for log visualization  
-- Rollback by time or custom filters  
-
----
-
-Enjoy tracking your players like a true server detective! 🔍
-
+Enjoy being Sherlock Holmes's Luanti version!
