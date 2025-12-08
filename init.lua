@@ -3,8 +3,6 @@
 -- Author: Cashia ©2025
 
 local log_folder = minetest.get_worldpath() .. "/blockloader"
-
--- Make sure folder exists
 minetest.mkdir(log_folder)
 
 -- Helper to get today's filename
@@ -29,27 +27,26 @@ local function log_event(playername, action, pos, node)
     end
 end
 
--- Register BlockWatcher admin privilege
+-- BlockWatcher admin privilege
 minetest.register_privilege("blockwatcher_admin", {
     description = "Allows use of BlockWatcher admin commands",
     give_to_singleplayer = true
 })
 
--- Register digging event
+-- Dig and place events
 minetest.register_on_dignode(function(pos, oldnode, digger)
     if digger and digger:is_player() then
         log_event(digger:get_player_name(), "dug", pos, oldnode)
     end
 end)
 
--- Register placing event
 minetest.register_on_placenode(function(pos, newnode, placer)
     if placer and placer:is_player() then
         log_event(placer:get_player_name(), "placed", pos, newnode)
     end
 end)
 
--- Load logs from all files
+-- Load logs from all daily files
 local function load_logs()
     local logs = {}
     for _, file in ipairs(minetest.get_dir_list(log_folder, false)) do
@@ -65,16 +62,21 @@ local function load_logs()
     return logs
 end
 
--- Helper function to get WorldEdit positions (//1 and //2)
+-- Modern WorldEdit //1 and //2
 local function get_pos(name, pos)
     local we = rawget(_G, "worldedit")
-    if we and we.pos and we.pos[name] then
-        return we.pos[name][pos] and vector.new(we.pos[name][pos]) or nil
+    if we and we.player_state and we.player_state[name] then
+        local state = we.player_state[name]
+        if pos == 1 and state.pos1 then
+            return vector.new(state.pos1)
+        elseif pos == 2 and state.pos2 then
+            return vector.new(state.pos2)
+        end
     end
     return nil
 end
 
--- /bw_check <player> command
+-- /bw_check <player>
 minetest.register_chatcommand("bw_check", {
     params = "<player>",
     description = "Show block edits made by a specific player",
@@ -98,7 +100,7 @@ minetest.register_chatcommand("bw_check", {
     end,
 })
 
--- /bw_area command
+-- /bw_area
 minetest.register_chatcommand("bw_area", {
     description = "Show edits inside a selected region (use //1 and //2 from WorldEdit)",
     privs = {blockwatcher_admin=true},
@@ -131,7 +133,7 @@ minetest.register_chatcommand("bw_area", {
     end,
 })
 
--- /bw_undo command
+-- /bw_undo
 minetest.register_chatcommand("bw_undo", {
     params = "[player <name> [count]] | [area]",
     description = "Undo block changes by player or in area",
@@ -144,12 +146,10 @@ minetest.register_chatcommand("bw_undo", {
         local logs = load_logs()
         local changes = {}
 
-        -- Undo by player
         if args[1] == "player" then
             local player_name = args[2]
             local count = tonumber(args[3]) or 50
             if not player_name then return false, "Specify player name!" end
-
             for i = #logs, 1, -1 do
                 local row = logs[i]
                 if row.player == player_name then
@@ -157,8 +157,6 @@ minetest.register_chatcommand("bw_undo", {
                     if #changes >= count then break end
                 end
             end
-
-        -- Undo in area
         elseif args[1] == "area" then
             local p1 = get_pos(name, 1)
             local p2 = get_pos(name, 2)
@@ -194,7 +192,7 @@ minetest.register_chatcommand("bw_undo", {
     end,
 })
 
--- Retroactive logging of all existing blocks into daily files
+-- Retroactive logging of all existing blocks
 minetest.register_on_mods_loaded(function()
     local files = minetest.get_dir_list(log_folder, false)
     if #files > 0 then return end -- skip if logs already exist
@@ -217,4 +215,4 @@ minetest.register_on_mods_loaded(function()
     minetest.log("action", "[blockwatcher] Retroactive logging complete.")
 end)
 
-minetest.log("action", "[blockwatcher] Loaded successfully (file logging by day, WorldEdit //1 and //2, retroactive logging).")
+minetest.log("action", "[blockwatcher] Loaded successfully (daily file logs, WorldEdit //1//2, retroactive).")
