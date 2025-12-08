@@ -1,53 +1,95 @@
-# BlockWatcher TODO
-
-**Author:** Shasha  
+# BlockWatcher – TODO List
+**Author:** Cashia         
 **Version:** 1.0  
 
----
-
-## Core Features
-- [x] Log all block digs  
-- [x] Log all block placements  
-- [x] Store logs in SQLite database  
-- [x] `/bw_check <player>` command  
-- [x] `/bw_area` command (WorldEdit required)  
-- [x] `/bw_undo player <name> [count]` command  
-- [x] `/bw_undo area` command (WorldEdit required)  
-- [x] Admin privilege `blockwatcher_admin` implemented  
+Tracking remaining tasks, improvements, and future upgrades for the mod.
 
 ---
 
-## Improvements / Optimizations
-- [ ] Optimize SQLite queries for large worlds  
-- [ ] Add undo progress feedback for large rollbacks  
-- [ ] Limit memory usage during bulk queries  
-- [ ] Add configurable log retention / auto-purge  
+## ✔ Core Features Implemented
+- [x] Block dig/place logging saved into daily files  
+- [x] Region selection using `/bw_set1` and `/bw_set2`  
+- [x] Particle visualization for region boundaries  
+- [x] Player-specific checks with `/bw_check <name>`  
+- [x] Region-specific checks with `/bw_area`  
+- [x] Undo system for both players and regions  
+- [x] Fully standalone; no dependencies  
 
 ---
 
-## User Experience
-- [ ] Make `/bw_check` available to players to view their own edits safely  
-- [ ] Add colored output for console readability  
-- [ ] Add optional notifications for players when undo affects them  
+## 🔧 Must-Do Enhancements
+### Logging
+- [ ] Add rotation cleanup (auto-delete logs older than X days)
+- [ ] Add optional JSON log output for external tools
+
+### Undo System
+- [ ] Add a **preview mode** before undo applies changes  
+- [ ] Add an **undo confirmation prompt**  
+- [ ] Add rollback protection to prevent infinite loops (undoing your own undo)
+
+### Region Tools
+- [ ] Add option to **clear** region selection (`/bw_clear`)  
+- [ ] Add region **save/load** commands (named regions)  
+- [ ] Let players use a tool (stick or wand) for setting pos1/pos2
 
 ---
 
-## Security / Safety
-- [ ] Ensure undo commands cannot break protected regions  
-- [ ] Add dry-run option to preview undo before applying  
-- [ ] Add rate-limiting for undo commands  
+## 🎨 Particle Visualization
+- [ ] Add config setting for particle duration  
+- [ ] Add different colors for pos1 and pos2  
+- [ ] Add toggle: `/bw_preview` to permanently show region edges until turned off  
 
 ---
 
-## Future Features
-- [ ] Discord alerts for griefing events  
-- [ ] Web-based dashboard to visualize edits  
-- [ ] Rollback by time, date, or custom filters  
-- [ ] Backup logs automatically before large undo operations  
+## ⚙️ Config & Optimization
+- [ ] Add a setting to limit log size per day  
+- [ ] Add a config file:  
+  - enable/disable particles  
+  - change max undo count  
+  - toggle logging for admins  
+- [ ] Improve load_logs() performance using a cached index  
 
 ---
 
-## Miscellaneous
-- [ ] Write unit tests for logging and undo functionality  
-- [ ] Add example configuration in `world.mt`  
-- [ ] Document mod setup for multi-world servers
+## 🛡 Privileges & Security
+- [ ] Add `blockwatcher_view` privilege (read-only access)  
+- [ ] Add rate-limit protection for undo and area scans  
+- [ ] Prevent undo from placing protected nodes
+
+---
+
+## 🖥 UI Upgrades (Optional)
+- [ ] Create a formspec-based UI for browsing logs  
+- [ ] Make a paginated log viewer inside Minetest  
+- [ ] Add clickable buttons for undo / region preview  
+
+---
+
+## 🧪 Testing
+- [ ] Test behavior under heavy load (1000+ logs/day)  
+- [ ] Test very large regions (100×100×100)  
+- [ ] Test node metadata survival when undoing  
+- [ ] Test undoing liquids, falling nodes, and special blocks  
+
+---
+
+## 📦 Future Features
+- [ ] Export logs to `/bw_export` command  
+- [ ] Discord webhook integration for real-time alerts  
+- [ ] Add "audit mode" where admins see edits live  
+- [ ] Add `/bw_trace <player>` to track them in real time  
+
+---
+
+## 📝 Documentation
+- [ ] Add usage examples with screenshots  
+- [ ] Add FAQ section to README  
+- [ ] Add developer documentation for log format  
+
+---
+
+## 🐛 Known Issues
+- [ ] Undoing a very large area can lag the server  
+- [ ] Particle preview may not render on some clients  
+- [ ] Some nodes (like furnaces) may lose metadata on undo  
+- [ ] Logs grow large over time — indexing system needed
