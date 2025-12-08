@@ -1,17 +1,25 @@
 -- blockwatcher/init.lua
--- Logs every block dig/place on the server into daily files
+-- Fully standalone BlockWatcher mod with particle region visualization
+-- Logs block edits and allows undo/area checks
 -- Author: Cashia ©2025
 
 local log_folder = minetest.get_worldpath() .. "/blockloader"
 minetest.mkdir(log_folder)
 
--- Helper to get today's filename
+local region_pos = {}         -- per-player area selection
+
+-- Admin privilege
+minetest.register_privilege("blockwatcher_admin", {
+    description = "Allows use of BlockWatcher commands",
+    give_to_singleplayer = true
+})
+
+-- Helper: today's file
 local function get_today_file()
-    local date_str = os.date("%m-%d-%Y")
-    return log_folder .. "/" .. date_str .. ".txt"
+    return log_folder .. "/" .. os.date("%m-%d-%Y") .. ".txt"
 end
 
--- Function to log events
+-- Log a block action
 local function log_event(playername, action, pos, node)
     local f = io.open(get_today_file(), "a")
     if f then
@@ -27,26 +35,7 @@ local function log_event(playername, action, pos, node)
     end
 end
 
--- BlockWatcher admin privilege
-minetest.register_privilege("blockwatcher_admin", {
-    description = "Allows use of BlockWatcher admin commands",
-    give_to_singleplayer = true
-})
-
--- Dig and place events
-minetest.register_on_dignode(function(pos, oldnode, digger)
-    if digger and digger:is_player() then
-        log_event(digger:get_player_name(), "dug", pos, oldnode)
-    end
-end)
-
-minetest.register_on_placenode(function(pos, newnode, placer)
-    if placer and placer:is_player() then
-        log_event(placer:get_player_name(), "placed", pos, newnode)
-    end
-end)
-
--- Load logs from all daily files
+-- Load all logs
 local function load_logs()
     local logs = {}
     for _, file in ipairs(minetest.get_dir_list(log_folder, false)) do
@@ -62,16 +51,78 @@ local function load_logs()
     return logs
 end
 
--- Modern WorldEdit //1 and //2
-local function get_pos(name, pos)
-    local we = rawget(_G, "worldedit")
-    if we and we.player_state and we.player_state[name] then
-        local state = we.player_state[name]
-        if pos == 1 and state.pos1 then
-            return vector.new(state.pos1)
-        elseif pos == 2 and state.pos2 then
-            return vector.new(state.pos2)
+-- Dig/place events
+minetest.register_on_dignode(function(pos, oldnode, digger)
+    if digger and digger:is_player() then
+        log_event(digger:get_player_name(), "dug", pos, oldnode)
+    end
+end)
+
+minetest.register_on_placenode(function(pos, newnode, placer)
+    if placer and placer:is_player() then
+        log_event(placer:get_player_name(), "placed", pos, newnode)
+    end
+end)
+
+-- Helper: visualize region with particles
+local function show_region_particles(name)
+    local p1 = region_pos[name] and region_pos[name].pos1
+    local p2 = region_pos[name] and region_pos[name].pos2
+    if not p1 or not p2 then return end
+
+    local minp = {x=math.min(p1.x,p2.x), y=math.min(p1.y,p2.y), z=math.min(p1.z,p2.z)}
+    local maxp = {x=math.max(p1.x,p2.x), y=math.max(p1.y,p2.y), z=math.max(p1.z,p2.z)}
+
+    for x=minp.x,maxp.x do
+        for y=minp.y,maxp.y do
+            for z=minp.z,maxp.z do
+                -- show only edges to reduce particles
+                if x==minp.x or x==maxp.x or y==minp.y or y==maxp.y or z==minp.z or z==maxp.z then
+                    minetest.add_particle({
+                        pos = {x=x+0.5, y=y+0.5, z=z+0.5},
+                        velocity = {x=0, y=0, z=0},
+                        acceleration = {x=0, y=0, z=0},
+                        expirationtime = 3,
+                        size = 4,
+                        texture = "default_obsidian_glass.png^[colorize:#0000FF:80",
+                        glow = 10
+                    })
+                end
+            end
         end
+    end
+end
+
+-- Region selection commands
+minetest.register_chatcommand("bw_set1", {
+    description = "Set first corner of region",
+    privs = {blockwatcher_admin=true},
+    func = function(name)
+        local player = minetest.get_player_by_name(name)
+        if not player then return false, "Player not found!" end
+        region_pos[name] = region_pos[name] or {}
+        region_pos[name].pos1 = vector.round(player:get_pos())
+        if region_pos[name].pos2 then show_region_particles(name) end
+        return true, "First corner set at ("..region_pos[name].pos1.x..","..region_pos[name].pos1.y..","..region_pos[name].pos1.z..")"
+    end,
+})
+
+minetest.register_chatcommand("bw_set2", {
+    description = "Set second corner of region",
+    privs = {blockwatcher_admin=true},
+    func = function(name)
+        local player = minetest.get_player_by_name(name)
+        if not player then return false, "Player not found!" end
+        region_pos[name] = region_pos[name] or {}
+        region_pos[name].pos2 = vector.round(player:get_pos())
+        if region_pos[name].pos1 then show_region_particles(name) end
+        return true, "Second corner set at ("..region_pos[name].pos2.x..","..region_pos[name].pos2.y..","..region_pos[name].pos2.z..")"
+    end,
+})
+
+local function get_selected_pos(name, pos)
+    if region_pos[name] then
+        return region_pos[name]["pos"..pos]
     end
     return nil
 end
@@ -79,7 +130,7 @@ end
 -- /bw_check <player>
 minetest.register_chatcommand("bw_check", {
     params = "<player>",
-    description = "Show block edits made by a specific player",
+    description = "Show last 50 edits by player",
     privs = {blockwatcher_admin=true},
     func = function(name, param)
         if param == "" then return false, "Usage: /bw_check <player>" end
@@ -102,12 +153,12 @@ minetest.register_chatcommand("bw_check", {
 
 -- /bw_area
 minetest.register_chatcommand("bw_area", {
-    description = "Show edits inside a selected region (use //1 and //2 from WorldEdit)",
+    description = "Show edits inside selected region",
     privs = {blockwatcher_admin=true},
     func = function(name)
-        local p1 = get_pos(name, 1)
-        local p2 = get_pos(name, 2)
-        if not p1 or not p2 then return false, "Set positions with //1 and //2 first!" end
+        local p1 = get_selected_pos(name, 1)
+        local p2 = get_selected_pos(name, 2)
+        if not p1 or not p2 then return false, "Set region with /bw_set1 and /bw_set2 first!" end
 
         local minp = {x=math.min(p1.x,p2.x), y=math.min(p1.y,p2.y), z=math.min(p1.z,p2.z)}
         local maxp = {x=math.max(p1.x,p2.x), y=math.max(p1.y,p2.y), z=math.max(p1.z,p2.z)}
@@ -127,7 +178,6 @@ minetest.register_chatcommand("bw_area", {
                 if #result >= 100 then break end
             end
         end
-
         if #result == 0 then return true, "No edits found in this region." end
         return true, table.concat(result, "\n")
     end,
@@ -158,9 +208,9 @@ minetest.register_chatcommand("bw_undo", {
                 end
             end
         elseif args[1] == "area" then
-            local p1 = get_pos(name, 1)
-            local p2 = get_pos(name, 2)
-            if not p1 or not p2 then return false, "Set positions with //1 and //2 first!" end
+            local p1 = get_selected_pos(name, 1)
+            local p2 = get_selected_pos(name, 2)
+            if not p1 or not p2 then return false, "Set region with /bw_set1 and /bw_set2 first!" end
 
             local minp = {x=math.min(p1.x,p2.x), y=math.min(p1.y,p2.y), z=math.min(p1.z,p2.z)}
             local maxp = {x=math.max(p1.x,p2.x), y=math.max(p1.y,p2.y), z=math.max(p1.z,p2.z)}
@@ -192,27 +242,4 @@ minetest.register_chatcommand("bw_undo", {
     end,
 })
 
--- Retroactive logging of all existing blocks
-minetest.register_on_mods_loaded(function()
-    local files = minetest.get_dir_list(log_folder, false)
-    if #files > 0 then return end -- skip if logs already exist
-
-    minetest.log("action", "[blockwatcher] Starting retroactive logging...")
-    local mapblocks = minetest.get_mapgen_params().chunks or {}
-    for _, blockpos in ipairs(mapblocks) do
-        for x = 0, 15 do
-            for y = 0, 15 do
-                for z = 0, 15 do
-                    local pos = vector.add(blockpos, {x=x, y=y, z=z})
-                    local node = minetest.get_node(pos)
-                    if node and node.name ~= "ignore" then
-                        log_event("<unknown>", "placed", pos, node)
-                    end
-                end
-            end
-        end
-    end
-    minetest.log("action", "[blockwatcher] Retroactive logging complete.")
-end)
-
-minetest.log("action", "[blockwatcher] Loaded successfully (daily file logs, WorldEdit //1//2, retroactive).")
+minetest.log("action", "[blockwatcher] Loaded successfully (particle region selection, daily logs, /bw_set1/2, /bw_area, /bw_check, /bw_undo).")
