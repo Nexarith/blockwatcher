@@ -1,6 +1,6 @@
-# blockwatcher-
+# blockwatcher
 
-**Author:** Cashia
+**Author:** Cashia  
 **Version:** 1.0  
 **Minetest Version:** 5.0+  
 **Dependencies:** WorldEdit (required for `/bw_area`)  
@@ -12,10 +12,10 @@
 **BlockWatcher** is a lightweight but powerful Minetest mod that logs **all block placements and digs** on your server.  
 It provides forensic-level tools to track player activity and undo griefing, similar to CoreProtect for Minecraft.
 
-Key features include:
+**Key features:**
 
 - Real-time logging of all block digs and placements  
-- Player-specific history lookup: `/bw_check <player>`  
+- Player-specific history: `/bw_check <player>`  
 - Region-specific history using WorldEdit positions: `/bw_area`  
 - Undo/rollback functionality: `/bw_undo player <name> [count]` or `/bw_undo area`  
 - SQLite database storage for fast, searchable logs  
@@ -25,18 +25,14 @@ Key features include:
 ## Installation
 
 1. Place the `blockwatcher` folder in your `mods/` directory.  
-2. Enable it in your `world.mt`:
+2. Enable it in `world.mt`:
 
-   ```
-   load_mod_blockwatcher = true
-   ```
+load_mod_blockwatcher = true
 
 3. Make sure WorldEdit is installed if you want to use `/bw_area`.  
 4. Start your server. You should see:
 
-```
 [blockwatcher] Loaded successfully.
-```
 
 ---
 
@@ -48,21 +44,15 @@ Shows the last 50 block edits by a specific player.
 
 Example:
 
-```
-/bw_check Shasha
-```
+/bw_check Cashia
 
 ### `/bw_area`
 
-Shows the last 100 block edits in a WorldEdit-defined region (//set1 and //set2).
+Shows the last 100 block edits in a WorldEdit-defined region (using `//set1` and `//set2`).
 
 Example:
 
-```
-/set1
-/set2
-/bw_area
-```
+/set1 /set2 /bw_area
 
 ### `/bw_undo player <name> [count]`
 
@@ -70,9 +60,7 @@ Undoes the last X actions by a player (default 50).
 
 Example:
 
-```
-/bw_undo player Gera 20
-```
+/bw_undo player Cashia 20
 
 ### `/bw_undo area`
 
@@ -80,9 +68,9 @@ Undoes the last 100 actions in a WorldEdit-selected region.
 
 Example:
 
-```
 /bw_undo area
-```
+
+**Note:** All sensitive commands require the `blockwatcher_admin` privilege.
 
 ---
 
@@ -90,9 +78,7 @@ Example:
 
 All events are saved in:
 
-```
 worlds/<your_world_name>/blockwatch.db
-```
 
 Stored in SQLite format for fast searches and retrieval.
 
@@ -116,3 +102,4 @@ Stored in SQLite format for fast searches and retrieval.
 ---
 
 Enjoy tracking your players like a true server detective! 🔍
+
