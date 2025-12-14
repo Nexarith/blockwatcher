@@ -11,7 +11,7 @@ else
     minetest.log("warning", "[blockwatcher] config.lua not found or failed to load. Using defaults.")
 end
 
--- Defaults if config entries missing
+-- Defaults
 config.log_folder = config.log_folder or (minetest.get_worldpath() .. "/blockloader")
 config.particle_enabled = config.particle_enabled ~= false
 config.particle_duration = config.particle_duration or 3
@@ -30,85 +30,123 @@ config.undo_preview = config.undo_preview == true
 -- Ensure log folder exists
 minetest.mkdir(config.log_folder)
 
--- Table to store per-player region selection
+-- Region storage
 local region_pos = {}
 
--- Admin privilege
+-- Log cache
+local logs_cache = {}
+local cache_loaded = false
+
+-- Privileges
 minetest.register_privilege(config.admin_priv, {
     description = "Allows use of BlockWatcher commands",
     give_to_singleplayer = true
 })
 
--- Optional: Read-only view privilege
 minetest.register_privilege(config.view_priv, {
-    description = "Allows viewing logs but not undoing"
+    description = "Allows viewing BlockWatcher logs"
 })
 
--- Helper: today's file
+-- Today's log file
 local function get_today_file()
     return config.log_folder .. "/" .. os.date("%m-%d-%Y") .. ".txt"
 end
 
--- Log a block action
-local function log_event(playername, action, pos, node)
-    local f = io.open(get_today_file(), "a")
-    if f then
-        local line = minetest.serialize({
-            time = os.time(),
-            player = playername,
-            action = action,
-            nodename = node.name,
-            pos = {x=pos.x, y=pos.y, z=pos.z}
-        })
-        f:write(line .. "\n")
-        f:close()
-    end
-end
-
--- Load logs (with optional cache)
-local logs_cache = {}
-local function load_logs()
-    if config.cache_logs and next(logs_cache) ~= nil then
+-- Load logs (disk → cache)
+local function load_logs(force_reload)
+    if config.cache_logs and cache_loaded and not force_reload then
         return logs_cache
     end
 
-    local logs = {}
+    logs_cache = {}
+    cache_loaded = true
+
     for _, file in ipairs(minetest.get_dir_list(config.log_folder, false)) do
         local f = io.open(config.log_folder .. "/" .. file, "r")
         if f then
             for line in f:lines() do
                 local data = minetest.deserialize(line)
-                if data then table.insert(logs, data) end
+                if data then
+                    table.insert(logs_cache, data)
+                end
             end
             f:close()
         end
     end
 
-    if config.cache_logs then logs_cache = logs end
-    return logs
+    -- Trim cache
+    if #logs_cache > config.max_cached_logs then
+        local excess = #logs_cache - config.max_cached_logs
+        for i = 1, excess do
+            table.remove(logs_cache, 1)
+        end
+    end
+
+    return logs_cache
 end
 
--- Particle visualization helper
+-- Log an event (disk + live cache)
+local function log_event(playername, action, pos, node)
+    local entry = {
+        time = os.time(),
+        player = playername,
+        action = action,
+        nodename = node.name,
+        pos = {x = pos.x, y = pos.y, z = pos.z}
+    }
+
+    -- Write to file
+    local f = io.open(get_today_file(), "a")
+    if f then
+        f:write(minetest.serialize(entry) .. "\n")
+        f:close()
+    end
+
+    -- Update cache live
+    if config.cache_logs then
+        if not cache_loaded then
+            load_logs(true)
+        end
+
+        table.insert(logs_cache, entry)
+
+        if #logs_cache > config.max_cached_logs then
+            table.remove(logs_cache, 1)
+        end
+    end
+end
+
+-- Particle visualization
 local function show_region_particles(name)
     if not config.particle_enabled then return end
     local p1 = region_pos[name] and region_pos[name].pos1
     local p2 = region_pos[name] and region_pos[name].pos2
     if not p1 or not p2 then return end
 
-    local minp = {x=math.min(p1.x,p2.x), y=math.min(p1.y,p2.y), z=math.min(p1.z,p2.z)}
-    local maxp = {x=math.max(p1.x,p2.x), y=math.max(p1.y,p2.y), z=math.max(p1.z,p2.z)}
+    local minp = vector.new(
+        math.min(p1.x, p2.x),
+        math.min(p1.y, p2.y),
+        math.min(p1.z, p2.z)
+    )
+    local maxp = vector.new(
+        math.max(p1.x, p2.x),
+        math.max(p1.y, p2.y),
+        math.max(p1.z, p2.z)
+    )
 
-    for x=minp.x,maxp.x do
-        for y=minp.y,maxp.y do
-            for z=minp.z,maxp.z do
-                if x==minp.x or x==maxp.x or y==minp.y or y==maxp.y or z==minp.z or z==maxp.z then
+    for x = minp.x, maxp.x do
+        for y = minp.y, maxp.y do
+            for z = minp.z, maxp.z do
+                if x == minp.x or x == maxp.x or
+                   y == minp.y or y == maxp.y or
+                   z == minp.z or z == maxp.z then
                     minetest.add_particle({
-                        pos = {x=x+0.5, y=y+0.5, z=z+0.5},
-                        velocity = {x=0, y=0, z=0},
-                        acceleration = {x=0, y=0, z=0},
+                        pos = {x = x + 0.5, y = y + 0.5, z = z + 0.5},
+                        velocity = {x = 0, y = 0, z = 0},
+                        acceleration = {x = 0, y = 0, z = 0},
                         expirationtime = config.particle_duration,
                         size = config.particle_size,
-                        texture = "default_obsidian_glass.png^[colorize:"..config.particle_color,
+                        texture = "default_obsidian_glass.png^[colorize:" .. config.particle_color,
                         glow = config.particle_glow
                     })
                 end
@@ -117,15 +155,12 @@ local function show_region_particles(name)
     end
 end
 
--- Helper to get selected region positions
-local function get_selected_pos(name, pos)
-    if region_pos[name] then
-        return region_pos[name]["pos"..pos]
-    end
-    return nil
+-- Helpers
+local function get_selected_pos(name, idx)
+    return region_pos[name] and region_pos[name]["pos" .. idx]
 end
 
--- Dig/place event logging
+-- Event hooks
 minetest.register_on_dignode(function(pos, oldnode, digger)
     if digger and digger:is_player() then
         log_event(digger:get_player_name(), "dug", pos, oldnode)
@@ -138,146 +173,152 @@ minetest.register_on_placenode(function(pos, newnode, placer)
     end
 end)
 
--- Region selection commands
+-- Region commands
 minetest.register_chatcommand("bw_set1", {
-    description = "Set first corner of region",
-    privs = {[config.admin_priv]=true},
+    description = "Set first corner",
+    privs = {[config.admin_priv] = true},
     func = function(name)
         local player = minetest.get_player_by_name(name)
-        if not player then return false, "Player not found!" end
         region_pos[name] = region_pos[name] or {}
         region_pos[name].pos1 = vector.round(player:get_pos())
         if region_pos[name].pos2 then show_region_particles(name) end
-        return true, "First corner set at ("..region_pos[name].pos1.x..","..region_pos[name].pos1.y..","..region_pos[name].pos1.z..")"
-    end,
+        return true, "First corner set."
+    end
 })
 
 minetest.register_chatcommand("bw_set2", {
-    description = "Set second corner of region",
-    privs = {[config.admin_priv]=true},
+    description = "Set second corner",
+    privs = {[config.admin_priv] = true},
     func = function(name)
         local player = minetest.get_player_by_name(name)
-        if not player then return false, "Player not found!" end
         region_pos[name] = region_pos[name] or {}
         region_pos[name].pos2 = vector.round(player:get_pos())
         if region_pos[name].pos1 then show_region_particles(name) end
-        return true, "Second corner set at ("..region_pos[name].pos2.x..","..region_pos[name].pos2.y..","..region_pos[name].pos2.z..")"
-    end,
+        return true, "Second corner set."
+    end
 })
 
 -- /bw_check <player>
 minetest.register_chatcommand("bw_check", {
     params = "<player>",
     description = "Show last 50 edits by player",
-    privs = {[config.admin_priv]=true},
-    func = function(name, param)
+    privs = {[config.admin_priv] = true},
+    func = function(_, param)
         if param == "" then return false, "Usage: /bw_check <player>" end
-        local player = param
         local logs = load_logs()
-        local result = {}
+        local out = {}
+
         for i = #logs, 1, -1 do
-            local row = logs[i]
-            if row.player == player then
-                table.insert(result, os.date("%Y-%m-%d %H:%M:%S", row.time)
-                    .. " | " .. row.action .. " | " .. row.nodename
-                    .. " at (" .. row.pos.x .. "," .. row.pos.y .. "," .. row.pos.z .. ")")
-                if #result >= 50 then break end
+            local r = logs[i]
+            if r.player == param then
+                table.insert(out,
+                    os.date("%Y-%m-%d %H:%M:%S", r.time) ..
+                    " | " .. r.action ..
+                    " | " .. r.nodename ..
+                    " at (" .. r.pos.x .. "," .. r.pos.y .. "," .. r.pos.z .. ")"
+                )
+                if #out >= 50 then break end
             end
         end
-        if #result == 0 then return true, "No edits found for player " .. player end
-        return true, table.concat(result, "\n")
-    end,
+
+        if #out == 0 then
+            return true, "No edits found for " .. param
+        end
+
+        return true, table.concat(out, "\n")
+    end
 })
 
 -- /bw_area
 minetest.register_chatcommand("bw_area", {
     description = "Show edits inside selected region",
-    privs = {[config.admin_priv]=true},
+    privs = {[config.admin_priv] = true},
     func = function(name)
-        local p1 = get_selected_pos(name, 1)
-        local p2 = get_selected_pos(name, 2)
-        if not p1 or not p2 then return false, "Set region with /bw_set1 and /bw_set2 first!" end
+        local p1, p2 = get_selected_pos(name, 1), get_selected_pos(name, 2)
+        if not p1 or not p2 then
+            return false, "Use /bw_set1 and /bw_set2 first."
+        end
 
-        local minp = {x=math.min(p1.x,p2.x), y=math.min(p1.y,p2.y), z=math.min(p1.z,p2.z)}
-        local maxp = {x=math.max(p1.x,p2.x), y=math.max(p1.y,p2.y), z=math.max(p1.z,p2.z)}
+        local minp = vector.min(p1, p2)
+        local maxp = vector.max(p1, p2)
 
         local logs = load_logs()
-        local result = {}
+        local out = {}
+
         for i = #logs, 1, -1 do
-            local row = logs[i]
-            local pos = row.pos
-            if pos.x >= minp.x and pos.x <= maxp.x and
-               pos.y >= minp.y and pos.y <= maxp.y and
-               pos.z >= minp.z and pos.z <= maxp.z then
-                table.insert(result, os.date("%Y-%m-%d %H:%M:%S", row.time)
-                    .. " | " .. row.player .. " " .. row.action
-                    .. " " .. row.nodename
-                    .. " at (" .. pos.x .. "," .. pos.y .. "," .. pos.z .. ")")
-                if #result >= config.max_undo_area then break end
+            local r = logs[i]
+            local p = r.pos
+            if p.x >= minp.x and p.x <= maxp.x and
+               p.y >= minp.y and p.y <= maxp.y and
+               p.z >= minp.z and p.z <= maxp.z then
+                table.insert(out,
+                    os.date("%Y-%m-%d %H:%M:%S", r.time) ..
+                    " | " .. r.player .. " " .. r.action ..
+                    " " .. r.nodename ..
+                    " at (" .. p.x .. "," .. p.y .. "," .. p.z .. ")"
+                )
+                if #out >= config.max_undo_area then break end
             end
         end
-        if #result == 0 then return true, "No edits found in this region." end
-        return true, table.concat(result, "\n")
-    end,
+
+        return true, #out > 0 and table.concat(out, "\n") or "No edits found."
+    end
 })
 
 -- /bw_undo
 minetest.register_chatcommand("bw_undo", {
-    params = "[player <name> [count]] | [area]",
-    description = "Undo block changes by player or in area",
-    privs = {[config.admin_priv]=true},
+    params = "player <name> [count] | area",
+    description = "Undo block changes",
+    privs = {[config.admin_priv] = true},
     func = function(name, param)
         local args = {}
-        for word in param:gmatch("%S+") do table.insert(args, word) end
-        if #args == 0 then return false, "Usage: /bw_undo player <name> [count] OR /bw_undo area" end
+        for w in param:gmatch("%S+") do table.insert(args, w) end
+        if #args == 0 then return false, "Invalid usage." end
 
         local logs = load_logs()
         local changes = {}
 
         if args[1] == "player" then
-            local player_name = args[2]
+            local pname = args[2]
             local count = tonumber(args[3]) or config.max_undo_player
-            if not player_name then return false, "Specify player name!" end
+            if not pname then return false, "Player name required." end
+
             for i = #logs, 1, -1 do
-                local row = logs[i]
-                if row.player == player_name then
-                    table.insert(changes, row)
+                if logs[i].player == pname then
+                    table.insert(changes, logs[i])
                     if #changes >= count then break end
                 end
             end
-        elseif args[1] == "area" then
-            local p1 = get_selected_pos(name, 1)
-            local p2 = get_selected_pos(name, 2)
-            if not p1 or not p2 then return false, "Set region with /bw_set1 and /bw_set2 first!" end
 
-            local minp = {x=math.min(p1.x,p2.x), y=math.min(p1.y,p2.y), z=math.min(p1.z,p2.z)}
-            local maxp = {x=math.max(p1.x,p2.x), y=math.max(p1.y,p2.y), z=math.max(p1.z,p2.z)}
+        elseif args[1] == "area" then
+            local p1, p2 = get_selected_pos(name, 1), get_selected_pos(name, 2)
+            if not p1 or not p2 then return false, "Set region first." end
+            local minp = vector.min(p1, p2)
+            local maxp = vector.max(p1, p2)
 
             for i = #logs, 1, -1 do
-                local row = logs[i]
-                local pos = row.pos
-                if pos.x >= minp.x and pos.x <= maxp.x and
-                   pos.y >= minp.y and pos.y <= maxp.y and
-                   pos.z >= minp.z and pos.z <= maxp.z then
-                    table.insert(changes, row)
+                local p = logs[i].pos
+                if p.x >= minp.x and p.x <= maxp.x and
+                   p.y >= minp.y and p.y <= maxp.y and
+                   p.z >= minp.z and p.z <= maxp.z then
+                    table.insert(changes, logs[i])
                     if #changes >= config.max_undo_area then break end
                 end
             end
         else
-            return false, "Invalid parameters. Usage: /bw_undo player <name> [count] OR /bw_undo area"
+            return false, "Invalid usage."
         end
 
-        for _, row in ipairs(changes) do
-            local pos = row.pos
-            if row.action == "placed" then
-                minetest.set_node(pos, {name="air"})
-            elseif row.action == "dug" then
-                minetest.set_node(pos, {name=row.nodename})
+        for _, r in ipairs(changes) do
+            if r.action == "placed" then
+                minetest.set_node(r.pos, {name = "air"})
+            elseif r.action == "dug" then
+                minetest.set_node(r.pos, {name = r.nodename})
             end
         end
 
         return true, "Undid " .. #changes .. " actions."
-    end,
+    end
 })
 
-minetest.log("action", "[blockwatcher] Loaded successfully (particle region selection, daily logs, /bw_set1/2, /bw_area, /bw_check, /bw_undo).")
+minetest.log("action", "[blockwatcher] Loaded successfully.")
