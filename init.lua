@@ -12,7 +12,7 @@ else
 end
 
 -- Defaults
-config.log_folder = config.log_folder or (minetest.get_worldpath() .. "/blockloader")
+config.log_folder = config.log_folder or (minetest.get_worldpath() .. "/blockwatcher")
 config.particle_enabled = config.particle_enabled ~= false
 config.particle_duration = config.particle_duration or 3
 config.particle_size = config.particle_size or 4
